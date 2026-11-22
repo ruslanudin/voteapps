@@ -16,6 +16,47 @@ export type Voter = {
   name: string
   className: string
   hasVoted: boolean
+  // Token rahasia yang tercetak pada surat undangan. Pemilih wajib memasukkan
+  // NISN/NIS beserta token ini untuk membuka surat suara.
+  token: string
+}
+
+// Token undangan: 6 karakter tanpa huruf/angka yang mudah tertukar (0/O, 1/I/L)
+// agar mudah diketik ulang siswa dari kertas undangan.
+export const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+export const TOKEN_LENGTH = 6
+
+// Token disimpan dan dibandingkan dalam huruf besar tanpa spasi.
+export function normalizeToken(value: string | null | undefined): string {
+  return String(value ?? '').trim().toUpperCase()
+}
+
+function randomIndex(max: number): number {
+  const cryptoApi = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined
+  if (cryptoApi?.getRandomValues) {
+    const buffer = new Uint32Array(1)
+    cryptoApi.getRandomValues(buffer)
+    return buffer[0] % max
+  }
+  return Math.floor(Math.random() * max)
+}
+
+// Buat token acak yang belum dipakai pada daftar "taken". Dipakai dashboard
+// admin maupun server sehingga format token selalu sama.
+export function makeRandomToken(taken: Iterable<string> = []): string {
+  const used = taken instanceof Set ? taken : new Set(taken)
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    let candidate = ''
+    while (candidate.length < TOKEN_LENGTH) candidate += TOKEN_ALPHABET[randomIndex(TOKEN_ALPHABET.length)]
+    if (!used.has(candidate)) return candidate
+  }
+  // Praktis tidak pernah tercapai: geser satu karakter sampai ditemukan yang unik.
+  let fallback = ''
+  while (fallback.length < TOKEN_LENGTH) fallback += TOKEN_ALPHABET[randomIndex(TOKEN_ALPHABET.length)]
+  while (used.has(fallback)) {
+    fallback = fallback.slice(1) + TOKEN_ALPHABET[randomIndex(TOKEN_ALPHABET.length)]
+  }
+  return fallback
 }
 
 export type ElectionSettings = {
@@ -64,8 +105,8 @@ export const defaultCandidates: Candidate[] = [
 ]
 
 export const defaultVoters: Voter[] = [
-  { id: '0012345678', name: 'Siswa Contoh 1', className: 'XI IPA 1', hasVoted: false },
-  { id: '0087654321', name: 'Siswa Contoh 2', className: 'XI IPS 2', hasVoted: false },
+  { id: '0012345678', name: 'Siswa Contoh 1', className: 'XI IPA 1', hasVoted: false, token: 'A7K2QX' },
+  { id: '0087654321', name: 'Siswa Contoh 2', className: 'XI IPS 2', hasVoted: false, token: 'B4M9RT' },
 ]
 
 export type ReportSettings = {

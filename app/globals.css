@@ -254,7 +254,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #92b899; outline-offs
 .admin-card-heading p { margin: 0; color: #91899e; font-size: 9px; }
 .admin-secondary { min-height: 38px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #ddd6f4; border-radius: 8px; padding: 0 11px; color: #6249c7; background: #f8f6ff; font-size: 10px; font-weight: 800; white-space: nowrap; }
 .admin-table { overflow-x: auto; }
-.admin-table-head, .admin-table-row { min-width: 740px; display: grid; grid-template-columns: 34px 150px 1fr 130px 110px 36px; align-items: center; gap: 8px; }
+.admin-table-head, .admin-table-row { min-width: 880px; display: grid; grid-template-columns: 34px 140px 1fr 105px 128px 86px 36px; align-items: center; gap: 8px; }
 .admin-table-head { padding: 0 8px 8px; color: #9690a2; font-size: 8px; font-weight: 800; letter-spacing: .7px; }
 .admin-table-row { padding: 7px 8px; border-top: 1px solid #f0edf4; }
 .admin-table-row input { min-width: 0; width: 100%; min-height: 38px; border: 1px solid #e5e1ec; border-radius: 7px; padding: 8px 9px; color: #403a50; background: #fff; outline: none; font-size: 10px; }
@@ -263,6 +263,10 @@ button:focus-visible, a:focus-visible { outline: 3px solid #92b899; outline-offs
 .admin-table-row input.auto-id:focus { border-color: #d9a63c; }
 .admin-status-toggle { display: flex; align-items: center; gap: 6px; color: #756e82; font-size: 9px; }
 .admin-status-toggle input { width: auto; min-height: auto; accent-color: #7054e8; }
+.admin-token-cell { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.admin-table-row .admin-token-cell input.token-input { font-family: ui-monospace, 'Courier New', monospace; letter-spacing: .12em; text-transform: uppercase; }
+.admin-refresh-button { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #ddd6f4; border-radius: 7px; color: #6249c7; background: #f6f3ff; cursor: pointer; }
+.admin-refresh-button:hover { border-color: #c3b7f2; background: #eeebff; }
 .admin-icon-button { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 7px; color: #aa5267; background: #fff2f5; }
 .admin-select-cell { display: grid; place-items: center; }
 .admin-select-cell input { width: 15px; height: 15px; min-height: 0; margin: 0; padding: 0; border: 0; background: transparent; accent-color: #7054e8; cursor: pointer; }
@@ -582,4 +586,47 @@ button:focus-visible, a:focus-visible { outline-color: #aa97ff; }
   .report-table th, .report-table-total td, .report-lead, .report-lock-icon { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .report-table tr, .report-facts, .report-sign, .report-kop { break-inside: avoid; page-break-inside: avoid; }
   @page { size: A4; margin: 15mm 14mm; }
+}
+
+/* ===== Surat undangan pemilihan ===== */
+.inv-shell { min-height: 100vh; padding: 26px 18px 64px; background: #eeecf5; }
+.inv-toolbar { max-width: 900px; margin: 0 auto 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.inv-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inv-control { display: inline-flex; align-items: center; gap: 6px; color: #6b6480; font-size: 9px; font-weight: 800; letter-spacing: .5px; }
+.inv-control select { min-height: 32px; max-width: 230px; border: 1px solid #ddd6f4; border-radius: 8px; padding: 0 8px; color: #4a4360; background: #fff; font-family: inherit; font-size: 10px; font-weight: 700; }
+.inv-grid { max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.inv-grid.is-single { grid-template-columns: minmax(0, 1fr); max-width: 470px; }
+.inv-card { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border-radius: 10px; color: #1d1a2b; background: #fff; box-shadow: 0 16px 48px #2a214018; font-family: 'Times New Roman', Georgia, serif; }
+.inv-kop { display: flex; align-items: center; gap: 10px; padding-bottom: 7px; border-bottom: 2px double #1d1a2b; }
+.inv-seal { flex: 0 0 auto; width: 32px; height: 32px; display: grid; place-items: center; border: 1.5px solid #1d1a2b; border-radius: 50%; }
+.inv-logo { flex: 0 0 auto; width: 36px; height: 36px; object-fit: contain; }
+.inv-kop-text { display: flex; flex-direction: column; line-height: 1.35; }
+.inv-kop-text strong { font-size: 11px; letter-spacing: .3px; text-transform: uppercase; }
+.inv-kop-text span { font-size: 7.5px; letter-spacing: .2px; }
+.inv-kop-text small { font-size: 7px; font-weight: 700; letter-spacing: .8px; }
+.inv-title { margin: 4px 0 0; text-align: center; font-size: 11.5px; letter-spacing: .3px; text-transform: uppercase; text-decoration: underline; }
+.inv-lead { margin: 0; font-size: 8.5px; line-height: 1.55; text-align: justify; }
+.inv-table { width: 100%; border-collapse: collapse; font-size: 8.5px; }
+.inv-table th, .inv-table td { border: 1px solid #2c2740; padding: 3px 6px; text-align: left; vertical-align: middle; }
+.inv-table th { width: 34%; background: #f1eff6; font-size: 7.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+.inv-mono { font-family: 'Courier New', monospace; font-size: 9.5px; font-weight: 700; letter-spacing: .5px; }
+.inv-token { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700; letter-spacing: 2.5px; color: #4a2fb8; }
+.inv-note { margin: 0; padding: 5px 7px; border-left: 2px solid #7054e8; background: #f7f5ff; font-size: 7.5px; line-height: 1.5; }
+.inv-sign { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: 8px; text-align: center; }
+.inv-sign-space { height: 26px; }
+.inv-sign strong { text-decoration: underline; text-underline-offset: 2px; }
+.inv-sign small { font-size: 7.5px; }
+
+@media screen and (max-width: 760px) {
+  .inv-shell { padding: 18px 10px 40px; }
+  .inv-grid { grid-template-columns: 1fr; }
+  .inv-control select { max-width: 170px; }
+}
+
+@media print {
+  .inv-shell { min-height: auto; padding: 0 !important; background: #fff; }
+  .inv-grid, .inv-grid.is-single { max-width: none; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+  .inv-grid.is-single { grid-template-columns: 1fr; }
+  .inv-card { gap: 6px; padding: 9px 11px; border: 1px dashed #8c86a0; border-radius: 0; box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
+  .inv-token, .inv-table th, .inv-note { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

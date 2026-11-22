@@ -10,10 +10,12 @@ export async function POST(request: Request) {
     const body = await request.json()
     const studentId = String(body?.studentId ?? '').trim()
     const candidateNumber = String(body?.candidateNumber ?? '').trim()
-    if (!studentId || !candidateNumber) {
+    // Token undangan divalidasi ulang di server, bukan hanya saat verifikasi.
+    const token = String(body?.token ?? '').trim()
+    if (!studentId || !candidateNumber || !token) {
       return NextResponse.json({ ok: false, reason: 'invalid' }, { status: 400 })
     }
-    const result = await castVote(studentId, candidateNumber)
+    const result = await castVote(studentId, candidateNumber, token)
     if (!result.ok) {
       return NextResponse.json(result, { status: 409 })
     }

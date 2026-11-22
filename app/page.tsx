@@ -42,6 +42,7 @@ async function fetchElectionData(): Promise<{ settings: ElectionSettings; candid
 
 export default function Page() {
   const [studentId, setStudentId] = useState('')
+  const [token, setToken] = useState('')
   const [idType, setIdType] = useState('NISN')
   const [verified, setVerified] = useState(false)
   const [selected, setSelected] = useState<Candidate | null>(null)
@@ -100,7 +101,7 @@ export default function Page() {
     const response = await fetch('/api/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId: studentId.trim() }),
+      body: JSON.stringify({ studentId: studentId.trim(), token: token.trim() }),
     })
     const result = await response.json()
     if (result.ok) {
@@ -110,6 +111,12 @@ export default function Page() {
       setVerified(false)
       setMessage(votingUnavailableMessage(result.status))
       void refreshElection()
+    } else if (result.reason === 'invalid_token') {
+      setVerified(false)
+      setMessage('Token undangan tidak cocok. Periksa kembali kode 6 karakter pada surat undanganmu.')
+    } else if (result.reason === 'server_error') {
+      setVerified(false)
+      setMessage('Server pemilihan belum siap. Hubungi panitia untuk mengaktifkan token undangan.')
     } else if (result.reason === 'already_voted') {
       setVerified(false)
       setMessage('Pemilih ini sudah menggunakan hak suaranya.')
@@ -124,7 +131,7 @@ export default function Page() {
     const response = await fetch('/api/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId: studentId.trim(), candidateNumber: selected.number }),
+      body: JSON.stringify({ studentId: studentId.trim(), candidateNumber: selected.number, token: token.trim() }),
     })
     const result = await response.json()
     if (result.ok) {
@@ -136,6 +143,10 @@ export default function Page() {
       setSelected(null)
       setMessage(votingUnavailableMessage(result.status))
       void refreshElection()
+    } else if (result.reason === 'invalid_token') {
+      setVerified(false)
+      setSelected(null)
+      setMessage('Token undangan tidak cocok. Masukkan kembali NISN/NIS dan token dari surat undangan.')
     } else if (result.reason === 'already_voted') {
       setVerified(false)
       setMessage('Pemilih ini sudah menggunakan hak suaranya.')
@@ -169,7 +180,7 @@ export default function Page() {
         </div>
 
         <aside className="voting-panel"><div className="panel-heading"><span className="panel-icon"><Fingerprint size={18} /></span><div><h2>Hak pilihmu</h2><p>Verifikasi sebelum memilih</p></div></div>
-          {cast ? <div className="success-state"><div className="success-icon"><Check size={24} /></div><h3>Terima kasih sudah memilih!</h3><p>Suaramu sudah tercatat dalam simulasi ini. Pilihanmu bersifat rahasia.</p><div className="receipt"><span><BadgeCheck size={16} /> STATUS</span><strong>SUDAH MEMILIH</strong></div><a className="success-results" href="/hasil">Lihat realcount <ArrowRight size={14} /></a></div> : !votingOpen ? <div className="vote-closed" role="status"><div className="vote-closed-icon"><LockKeyhole size={20} /></div><h3>{votingUnavailableTitle(status)}</h3><p>{unavailableMessage}</p><a className="vote-closed-link" href="/hasil">Lihat hasil <ArrowRight size={13} /></a></div> : verified ? <div className="verified-state"><div className="verified-banner"><BadgeCheck size={17} /><span>Identitas siap</span></div><div className="student-summary"><span className="summary-label">NOMOR IDENTITAS</span><strong>{studentId.replace(/.(?=.{3})/g, '•')}</strong><small>Pastikan pasangan pilihanmu sudah benar.</small></div><div className="vote-selection"><span className="summary-label">PILIHANMU</span>{selected ? <div className="selection-value"><span className="selection-number">{selected.number}</span><strong>{selected.president}<small> & {selected.vice}</small></strong></div> : <div className="selection-empty">Pilih salah satu pasangan calon</div>}</div><button className="submit-vote" onClick={submitVote} disabled={!selected}>Kirim suara <ArrowRight size={16} /></button><button className="change-student" onClick={() => { setVerified(false); setStudentId(''); setMessage('') }}>Ganti identitas</button></div> : <form className="verify-form" onSubmit={verifyStudent}><p className="form-intro">Masukkan identitas sekolah untuk membuka surat suara.</p><label htmlFor="id-number">JENIS IDENTITAS</label><div className="id-toggle" role="group" aria-label="Pilih jenis identitas"><button type="button" className={idType === 'NISN' ? 'selected' : ''} onClick={() => setIdType('NISN')}>NISN</button><button type="button" className={idType === 'NIS' ? 'selected' : ''} onClick={() => setIdType('NIS')}>NIS</button><button type="button" className={idType === 'Manual' ? 'selected' : ''} onClick={() => setIdType('Manual')}>Manual</button></div><label htmlFor="id-number">{idType === 'Manual' ? 'NAMA / KODE PEMILIH' : `NOMOR ${idType}`}</label><input id="id-number" value={studentId} onChange={(event) => setStudentId(event.target.value)} placeholder={idType === 'NISN' ? 'Masukkan 10 digit NISN' : idType === 'NIS' ? 'Masukkan nomor induk siswa' : 'Nama atau kode dari panitia'} required autoComplete="off" /><div className="privacy-hint"><LockKeyhole size={15} /><span>Identitas hanya dipakai memverifikasi hak pilih dan tidak ditampilkan ke publik.</span></div><button className="verify-button" type="submit">Lanjutkan <ArrowRight size={16} /></button>{message && <p className="form-message" role="status">{message}</p>}</form>}
+          {cast ? <div className="success-state"><div className="success-icon"><Check size={24} /></div><h3>Terima kasih sudah memilih!</h3><p>Suaramu sudah tercatat dalam simulasi ini. Pilihanmu bersifat rahasia.</p><div className="receipt"><span><BadgeCheck size={16} /> STATUS</span><strong>SUDAH MEMILIH</strong></div><a className="success-results" href="/hasil">Lihat realcount <ArrowRight size={14} /></a></div> : !votingOpen ? <div className="vote-closed" role="status"><div className="vote-closed-icon"><LockKeyhole size={20} /></div><h3>{votingUnavailableTitle(status)}</h3><p>{unavailableMessage}</p><a className="vote-closed-link" href="/hasil">Lihat hasil <ArrowRight size={13} /></a></div> : verified ? <div className="verified-state"><div className="verified-banner"><BadgeCheck size={17} /><span>Identitas siap</span></div><div className="student-summary"><span className="summary-label">NOMOR IDENTITAS</span><strong>{studentId.replace(/.(?=.{3})/g, '•')}</strong><small>Pastikan pasangan pilihanmu sudah benar.</small></div><div className="vote-selection"><span className="summary-label">PILIHANMU</span>{selected ? <div className="selection-value"><span className="selection-number">{selected.number}</span><strong>{selected.president}<small> & {selected.vice}</small></strong></div> : <div className="selection-empty">Pilih salah satu pasangan calon</div>}</div><button className="submit-vote" onClick={submitVote} disabled={!selected}>Kirim suara <ArrowRight size={16} /></button><button className="change-student" onClick={() => { setVerified(false); setStudentId(''); setToken(''); setMessage('') }}>Ganti identitas</button></div> : <form className="verify-form" onSubmit={verifyStudent}><p className="form-intro">Masukkan identitas sekolah dan token dari surat undangan untuk membuka surat suara.</p><label htmlFor="id-number">JENIS IDENTITAS</label><div className="id-toggle" role="group" aria-label="Pilih jenis identitas"><button type="button" className={idType === 'NISN' ? 'selected' : ''} onClick={() => setIdType('NISN')}>NISN</button><button type="button" className={idType === 'NIS' ? 'selected' : ''} onClick={() => setIdType('NIS')}>NIS</button><button type="button" className={idType === 'Manual' ? 'selected' : ''} onClick={() => setIdType('Manual')}>Manual</button></div><label htmlFor="id-number">{idType === 'Manual' ? 'NAMA / KODE PEMILIH' : `NOMOR ${idType}`}</label><input id="id-number" value={studentId} onChange={(event) => setStudentId(event.target.value)} placeholder={idType === 'NISN' ? 'Masukkan 10 digit NISN' : idType === 'NIS' ? 'Masukkan nomor induk siswa' : 'Nama atau kode dari panitia'} required autoComplete="off" /><label htmlFor="voter-token">TOKEN UNDANGAN</label><input id="voter-token" value={token} onChange={(event) => setToken(event.target.value.toUpperCase())} placeholder="6 karakter pada surat undangan" maxLength={16} spellCheck={false} required autoComplete="off" /><div className="privacy-hint"><LockKeyhole size={15} /><span>Identitas dan token undangan hanya dipakai memverifikasi hak pilih dan tidak ditampilkan ke publik.</span></div><button className="verify-button" type="submit">Lanjutkan <ArrowRight size={16} /></button>{message && <p className="form-message" role="status">{message}</p>}</form>}
           <div className="panel-footer"><LockKeyhole size={14} /><span>Realcount hanya untuk pemilih yang sudah memilih selama pemilihan berlangsung, dan terbuka untuk umum setelah pemilihan ditutup.</span></div>
         </aside>
       </section>

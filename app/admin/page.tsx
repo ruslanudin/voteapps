@@ -1,12 +1,24 @@
 'use client'
 
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, CalendarDays, FileText, GraduationCap, LockKeyhole, LogOut, Palette, RotateCcw, Save, School, Trash2, Upload, UserPlus, Users, Vote } from 'lucide-react'
+import { ArrowLeft, CalendarDays, FileText, GraduationCap, LockKeyhole, LogOut, Mail, Palette, Printer, RefreshCw, RotateCcw, Save, School, Trash2, Upload, UserPlus, Users, Vote } from 'lucide-react'
 import * as XLSX from 'xlsx'
-import { Candidate, ElectionData, ElectionSettings, ReportSettings, Voter, defaultCandidates, defaultElectionSettings, defaultReportSettings, defaultVoters } from '@/lib/election'
+import { Candidate, ElectionData, ElectionSettings, ReportSettings, Voter, defaultCandidates, defaultElectionSettings, defaultReportSettings, defaultVoters, makeRandomToken, normalizeToken } from '@/lib/election'
 import { importVotersFromWorkbook } from '@/lib/voter-import'
 
 type AdminVoter = Voter & { statusDirty?: boolean }
+
+// Isi token undangan untuk pemilih yang belum punya. Dipakai saat impor dan
+// tombol "Generate token" agar setiap undangan selalu punya kode unik.
+function assignMissingTokens(voters: Voter[]): Voter[] {
+  const taken = new Set(voters.map((voter) => normalizeToken(voter.token)).filter(Boolean))
+  return voters.map((voter) => {
+    if (normalizeToken(voter.token)) return voter
+    const token = makeRandomToken(taken)
+    taken.add(token)
+    return { ...voter, token }
+  })
+}
 
 // Validasi sisi klien supaya tombol simpan tidak pernah mengirim daftar yang
 // akan ditolak database (mis. NIS ganda) setelah data lama terhapus.
@@ -24,6 +36,7 @@ function validateElection(value: ElectionData): string | null {
   }
 
   const ids = new Set<string>()
+  const tokens = new Set<string>()
   for (const [index, voter] of value.voters.entries()) {
     const id = String(voter.id ?? '').trim()
     if (!id) {
@@ -31,6 +44,15 @@ function validateElection(value: ElectionData): string | null {
     }
     if (ids.has(id)) return `NIS/NISN ${id} dipakai lebih dari satu pemilih.`
     ids.add(id)
+  }
+
+  // Token boleh kosong (server akan membuatnya otomatis), tetapi token yang
+  // diisi tidak boleh dipakai dua pemilih.
+  for (const voter of value.voters) {
+    const token = normalizeToken(voter.token)
+    if (!token) continue
+    if (tokens.has(token)) return `token ${token} dipakai lebih dari satu pemilih.`
+    tokens.add(token)
   }
 
   return null
@@ -41,7 +63,7 @@ export default function AdminPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
-  const [tab, setTab] = useState<'event' | 'school' | 'voters' | 'candidates' | 'theme' | 'report'>('event')
+  const [tab, setTab] = useState<'event' | 'school' | 'voters' | 'candidates' | 'theme' | 'report' | 'undangan'>('event')
   const [data, setData] = useState<ElectionData>({
     settings: defaultElectionSettings,
     candidates: defaultCandidates,
@@ -192,6 +214,7 @@ export default function AdminPage() {
         name: voter.name,
         className: voter.className,
         hasVoted: voter.hasVoted,
+        token: normalizeToken(voter.token),
       })),
       voterStatusEdits,
     }
@@ -350,10 +373,16 @@ export default function AdminPage() {
   }
 
   function addVoter() {
-    setData((current) => ({
-      ...current,
-      voters: [...current.voters, { id: '', name: '', className: '', hasVoted: false }],
-    }))
+    setData((current) => {
+      const taken = new Set(current.voters.map((voter) => normalizeToken(voter.token)).filter(Boolean))
+      return {
+        ...current,
+        voters: [
+          ...current.voters,
+          { id: '', name: '', className: '', hasVoted: false, token: makeRandomToken(taken) },
+        ],
+      }
+    })
   }
 
   function updateVoter(index: number, field: keyof Voter, value: string | boolean) {
@@ -374,6 +403,59 @@ export default function AdminPage() {
         voterIndex === index ? ({ ...voter, hasVoted, statusDirty: true } as AdminVoter) : voter,
       ),
     }))
+  }
+
+  // Buat ulang token satu pemilih (mis. undangan hilang atau token bocor).
+  // Setelah disimpan, undangan lama dengan token tersebut tidak berlaku lagi.
+  function regenerateVoterToken(index: number) {
+    setData((current) => {
+      const taken = new Set(current.voters.map((voter) => normalizeToken(voter.token)).filter(Boolean))
+      const token = makeRandomToken(taken)
+      return {
+        ...current,
+        voters: current.voters.map((voter, voterIndex) =>
+          voterIndex === index ? { ...voter, token } : voter,
+        ),
+      }
+    })
+  }
+
+  function generateMissingTokens() {
+    const missing = data.voters.filter((voter) => !normalizeToken(voter.token)).length
+    if (!missing) {
+      setNotice('Semua pemilih sudah memiliki token undangan.')
+      window.setTimeout(() => setNotice(''), 3200)
+      return
+    }
+    setData((current) => ({ ...current, voters: assignMissingTokens(current.voters) }))
+    setNotice(`${missing} token undangan dibuat otomatis. Tekan Simpan semua untuk menerapkan.`)
+    window.setTimeout(() => setNotice(''), 4600)
+  }
+
+  function bulkGenerateTokens() {
+    const count = selectedVoters.size
+    if (!count) return
+    if (
+      !window.confirm(
+        `Buat token baru untuk ${count} pemilih terpilih? Undangan lama dengan token tersebut tidak berlaku lagi.`,
+      )
+    ) {
+      return
+    }
+    setData((current) => {
+      const taken = new Set(current.voters.map((voter) => normalizeToken(voter.token)).filter(Boolean))
+      return {
+        ...current,
+        voters: current.voters.map((voter, index) => {
+          if (!selectedVoters.has(index)) return voter
+          const token = makeRandomToken(taken)
+          taken.add(token)
+          return { ...voter, token }
+        }),
+      }
+    })
+    setNotice(`Token baru dibuat untuk ${count} pemilih terpilih. Tekan Simpan semua untuk menerapkan.`)
+    window.setTimeout(() => setNotice(''), 4600)
   }
 
   function removeVoter(index: number) {
@@ -452,7 +534,8 @@ export default function AdminPage() {
       const buffer = await file.arrayBuffer()
       const workbook = XLSX.read(buffer, { type: 'array' })
       const existingIds = data.voters.map((voter) => voter.id.trim()).filter(Boolean)
-      const outcome = importVotersFromWorkbook(workbook, existingIds)
+      const existingTokens = data.voters.map((voter) => voter.token)
+      const outcome = importVotersFromWorkbook(workbook, existingIds, existingTokens)
 
       if (!outcome.ok) {
         setNotice(
@@ -478,6 +561,9 @@ export default function AdminPage() {
         parts.push(
           `${summary.generatedIds.length} baris tanpa NISN/NIS diberi nomor acak 10 digit (mis. ${summary.generatedIds[0]}) — kolomnya tetap bisa diedit di tabel`,
         )
+      }
+      if (summary.tokensGenerated > 0) {
+        parts.push(`${summary.tokensGenerated} token undangan dibuat otomatis`)
       }
       if (summary.duplicateIds > 0) parts.push(`${summary.duplicateIds} baris dilewati karena NIS/NISN sudah terdaftar`)
       if (summary.skippedRows > 0) parts.push(`${summary.skippedRows} baris tanpa nama dilewati`)
@@ -542,6 +628,7 @@ export default function AdminPage() {
 
   const votedCount = data.voters.filter((voter) => voter.hasVoted).length
   const pendingCount = data.voters.length - votedCount
+  const tokenReady = data.voters.filter((voter) => normalizeToken(voter.token)).length
   const report = data.report ?? defaultReportSettings
 
   return (
@@ -555,13 +642,14 @@ export default function AdminPage() {
           <button className={tab === 'candidates' ? 'active' : ''} onClick={() => setTab('candidates')}><GraduationCap size={17} /> Pasangan Calon</button>
           <button className={tab === 'theme' ? 'active' : ''} onClick={() => setTab('theme')}><Palette size={17} /> Tema Warna</button>
           <button className={tab === 'report' ? 'active' : ''} onClick={() => setTab('report')}><FileText size={17} /> Berita Acara</button>
+          <button className={tab === 'undangan' ? 'active' : ''} onClick={() => setTab('undangan')}><Mail size={17} /> Surat Undangan</button>
         </nav>
         <button className="admin-logout" onClick={logout}><LogOut size={16} /> Keluar</button>
       </aside>
 
       <section className="admin-main">
         <header className="admin-header">
-          <div><span className="admin-kicker">DASHBOARD PEMILIHAN</span><h1>{tab === 'event' ? 'Pengaturan event' : tab === 'school' ? 'Data sekolah' : tab === 'voters' ? 'Daftar pemilih' : tab === 'candidates' ? 'Pasangan calon' : tab === 'theme' ? 'Tema warna aplikasi' : 'Berita acara & PDF'}</h1></div>
+          <div><span className="admin-kicker">DASHBOARD PEMILIHAN</span><h1>{tab === 'event' ? 'Pengaturan event' : tab === 'school' ? 'Data sekolah' : tab === 'voters' ? 'Daftar pemilih' : tab === 'candidates' ? 'Pasangan calon' : tab === 'theme' ? 'Tema warna aplikasi' : tab === 'report' ? 'Berita acara & PDF' : 'Surat undangan pemilihan'}</h1></div>
           <div className="admin-header-actions">
             {data.settings.status === 'closed' && (
               <button className="admin-report" onClick={openReport}><FileText size={15} /> Berita acara PDF</button>
@@ -603,13 +691,14 @@ export default function AdminPage() {
 
         {tab === 'voters' && (
           <section className="admin-card">
-            <div className="admin-card-heading"><div><h2>Daftar pemilih</h2><p>NIS/NISN menjadi identitas untuk masuk surat suara.</p></div><div className="admin-card-actions"><label className="admin-secondary import-button"><Upload size={15} /> Impor CSV/XLS<input type="file" accept=".csv,.xls,.xlsx" onChange={(event) => { importVoters(event.target.files?.[0]); event.target.value = '' }} /></label><button className="admin-secondary" onClick={addVoter}><UserPlus size={15} /> Tambah pemilih</button><button className="admin-reset" onClick={clearAllVoters} disabled={!data.voters.length}><Trash2 size={15} /> Hapus semua</button></div></div>
-            <p className="admin-helper">Impor mencari kolom <strong>Nama</strong> (wajib), <strong>NISN/NIS</strong>, dan <strong>Kelas</strong> pada baris judul — urutan kolom bebas. Bila NISN/NIS tidak ada, nomor dibuat <strong>acak 10 digit</strong> (mis. <strong>4821093375</strong>) dan ditandai kuning sebagai pengingat — semua kolom NIS/NISN tetap bisa diedit kapan saja. Bila file memiliki beberapa sheet, hanya <strong>sheet aktif</strong> yang dibaca; NISN/NIS yang sudah terdaftar dilewati. <strong>Reset pemilihan tidak menghapus daftar ini</strong> — untuk mengosongkannya pakai tombol <strong>Hapus semua</strong> lalu <strong>Simpan semua</strong>.</p>
+            <div className="admin-card-heading"><div><h2>Daftar pemilih</h2><p>NIS/NISN dan token undangan menjadi identitas untuk masuk surat suara.</p></div><div className="admin-card-actions"><label className="admin-secondary import-button"><Upload size={15} /> Impor CSV/XLS<input type="file" accept=".csv,.xls,.xlsx" onChange={(event) => { importVoters(event.target.files?.[0]); event.target.value = '' }} /></label><button className="admin-secondary" onClick={generateMissingTokens}><RefreshCw size={15} /> Lengkapi token</button><button className="admin-secondary" onClick={addVoter}><UserPlus size={15} /> Tambah pemilih</button><button className="admin-reset" onClick={clearAllVoters} disabled={!data.voters.length}><Trash2 size={15} /> Hapus semua</button></div></div>
+            <p className="admin-helper">Impor mencari kolom <strong>Nama</strong> (wajib), <strong>NISN/NIS</strong>, dan <strong>Kelas</strong> pada baris judul — urutan kolom bebas. Bila NISN/NIS tidak ada, nomor dibuat <strong>acak 10 digit</strong> (mis. <strong>4821093375</strong>) dan ditandai kuning sebagai pengingat — semua kolom NIS/NISN tetap bisa diedit kapan saja. Setiap pemilih baru otomatis mendapat <strong>token undangan 6 karakter</strong> yang tercetak pada surat undangan; token bisa dibuat ulang per baris dengan tombol <strong>↻</strong>. Bila file memiliki beberapa sheet, hanya <strong>sheet aktif</strong> yang dibaca; NISN/NIS yang sudah terdaftar dilewati. <strong>Reset pemilihan tidak menghapus daftar ini</strong> — untuk mengosongkannya pakai tombol <strong>Hapus semua</strong> lalu <strong>Simpan semua</strong>.</p>
             {selectedVoters.size > 0 && (
               <div className="admin-table-toolbar">
                 <span><strong>{selectedVoters.size}</strong> pemilih dipilih</span>
                 <div className="admin-table-toolbar-actions">
                   <button className="admin-secondary" onClick={bulkSetClass}>Ubah kelas</button>
+                  <button className="admin-secondary" onClick={bulkGenerateTokens}><RefreshCw size={15} /> Token baru</button>
                   <button className="admin-secondary" onClick={() => bulkSetVoted(true)}>Tandai sudah memilih</button>
                   <button className="admin-secondary" onClick={() => bulkSetVoted(false)}>Tandai belum memilih</button>
                   <button className="admin-reset" onClick={deleteSelectedVoters}><Trash2 size={15} /> Hapus terpilih</button>
@@ -617,13 +706,17 @@ export default function AdminPage() {
               </div>
             )}
             <div className="admin-table">
-              <div className="admin-table-head"><span className="admin-select-cell"><input type="checkbox" ref={selectAllRef} checked={allVotersSelected} onChange={toggleSelectAllVoters} aria-label="Pilih semua pemilih" /></span><span>NIS/NISN</span><span>NAMA</span><span>KELAS</span><span>STATUS</span><span /></div>
+              <div className="admin-table-head"><span className="admin-select-cell"><input type="checkbox" ref={selectAllRef} checked={allVotersSelected} onChange={toggleSelectAllVoters} aria-label="Pilih semua pemilih" /></span><span>NIS/NISN</span><span>NAMA</span><span>KELAS</span><span>TOKEN</span><span>STATUS</span><span /></div>
               {data.voters.map((voter, index) => (
                 <div className="admin-table-row" key={index}>
                   <span className="admin-select-cell"><input type="checkbox" checked={selectedVoters.has(index)} onChange={() => toggleVoterSelected(index)} aria-label={`Pilih ${voter.name || voter.id || 'pemilih'}`} /></span>
                   <input value={voter.id} className={generatedIds.has(voter.id.trim()) ? 'auto-id' : undefined} title={generatedIds.has(voter.id.trim()) ? 'Nomor ini dibuat acak (10 digit) karena file tidak memuat NISN/NIS. Boleh dipakai apa adanya atau diganti dengan nomor asli — kolom tetap bisa diedit.' : undefined} onChange={(event) => updateVoter(index, 'id', event.target.value)} placeholder="Nomor identitas" />
                   <input value={voter.name} onChange={(event) => updateVoter(index, 'name', event.target.value)} placeholder="Nama siswa" />
                   <input value={voter.className} onChange={(event) => updateVoter(index, 'className', event.target.value)} placeholder="Kelas" />
+                  <div className="admin-token-cell">
+                    <input value={voter.token} className="token-input" title="Token undangan 6 karakter. Tercetak pada surat undangan dan wajib dimasukkan pemilih saat memilih." onChange={(event) => updateVoter(index, 'token', event.target.value.toUpperCase())} placeholder="Token" />
+                    <button className="admin-refresh-button" aria-label="Buat ulang token" title="Buat ulang token" onClick={() => regenerateVoterToken(index)}><RefreshCw size={13} /></button>
+                  </div>
                   <label className="admin-status-toggle"><input type="checkbox" checked={voter.hasVoted} onChange={(event) => toggleVoterStatus(index, event.target.checked)} /><span>{voter.hasVoted ? 'Sudah' : 'Belum'}</span></label>
                   <button className="admin-icon-button" aria-label="Hapus pemilih" onClick={() => removeVoter(index)}><Trash2 size={15} /></button>
                 </div>
@@ -733,6 +826,25 @@ export default function AdminPage() {
               )}
             </div>
           </section>
+        )}
+        {tab === 'undangan' && (
+          <div className="admin-content-grid">
+            <section className="admin-card">
+              <h2>Surat undangan pemilihan</h2>
+              <div className="admin-form-grid">
+                <p className="admin-helper span-2">Setiap pemilih memiliki <strong>token undangan 6 karakter</strong>. Surat undangan memuat nama, kelas, NISN/NIS, dan token tersebut untuk dicetak dan dibagikan kepada siswa. Saat memilih, siswa memasukkan NISN/NIS <strong>beserta token</strong> dari undangannya.</p>
+                <div className="span-2 report-logo-row">
+                  <button className="admin-primary compact" onClick={() => { window.location.href = '/admin/surat-undangan' }} disabled={!data.voters.length}><Printer size={15} /> Buka &amp; cetak surat undangan</button>
+                  <button className="admin-secondary" onClick={generateMissingTokens}><RefreshCw size={15} /> Lengkapi token kosong</button>
+                </div>
+                <p className="admin-helper span-2">Di halaman cetak, pilih <strong>Semua kelas</strong> untuk seluruh sekolah, satu kelas untuk pencetakan per kelas, atau satu siswa untuk undangan per siswa. Pada dialog cetak pilih “Simpan sebagai PDF” bila ingin berkas digital. Token bersifat rahasia: bagikan hanya kepada pemiliknya dan buat ulang (tombol <strong>↻</strong> di tab Pemilih) bila undangan hilang atau token bocor.</p>
+                {tokenReady < data.voters.length && (
+                  <p className="admin-helper admin-helper-warning span-2">{data.voters.length - tokenReady} pemilih belum memiliki token. Tekan <strong>Lengkapi token kosong</strong> lalu <strong>Simpan semua</strong> agar undangannya bisa dicetak.</p>
+                )}
+              </div>
+            </section>
+            <section className="admin-card admin-stat-card"><span>TOKEN SIAP</span><strong>{tokenReady}</strong><div>dari {data.voters.length} pemilih</div></section>
+          </div>
         )}
       </section>
     </main>

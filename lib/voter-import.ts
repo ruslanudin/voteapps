@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import type { Voter } from '@/lib/election'
+import { makeRandomToken, normalizeToken, type Voter } from '@/lib/election'
 
 // Panjang nomor identitas acak yang dibuat saat file hanya berisi nama.
 // Nomor ini dipakai sebagai NISN/NIS sementara: 10 digit angka, tanpa nol di
@@ -72,6 +72,8 @@ export type VoterImportSummary = {
   columns: { id?: string; name: string; className?: string }
   // Nomor acak yang dibuat untuk baris tanpa NISN/NIS (10 digit).
   generatedIds: string[]
+  // Token undangan yang dibuat otomatis untuk setiap pemilih baru.
+  tokensGenerated: number
   skippedRows: number
   duplicateIds: number
 }
@@ -188,9 +190,11 @@ export function makeRandomVoterId(taken: Iterable<string> = []): string {
 // - NISN/NIS kosong -> dibuat nomor acak 10 digit (tetap bisa diedit admin di
 //   tab Pemilih sebelum pemilihan dibuka).
 // - NISN/NIS yang sudah ada (di file maupun di daftar pemilih) dilewati.
+// - Setiap pemilih baru mendapat token undangan 6 karakter yang unik.
 export function importVotersFromWorkbook(
   workbook: XLSX.WorkBook,
   existingIds: Iterable<string> = [],
+  existingTokens: Iterable<string> = [],
 ): VoterImportOutcome {
   const sheetNames = [...workbook.SheetNames]
   const analyzed = sheetNames.flatMap((sheetName) => {
@@ -210,6 +214,13 @@ export function importVotersFromWorkbook(
   for (const id of existingIds) {
     const value = text(id)
     if (value) taken.add(value)
+  }
+
+  // Token undangan juga harus unik, termasuk terhadap pemilih yang sudah ada.
+  const takenTokens = new Set<string>()
+  for (const token of existingTokens) {
+    const value = normalizeToken(token)
+    if (value) takenTokens.add(value)
   }
 
   const voters: Voter[] = []
@@ -234,14 +245,18 @@ export function importVotersFromWorkbook(
         continue
       }
       taken.add(rawId)
-      voters.push({ id: rawId, name, className, hasVoted: false })
+      const token = makeRandomToken(takenTokens)
+      takenTokens.add(token)
+      voters.push({ id: rawId, name, className, hasVoted: false, token })
       continue
     }
 
     const autoId = makeRandomVoterId(taken)
     taken.add(autoId)
     generatedIds.push(autoId)
-    voters.push({ id: autoId, name, className, hasVoted: false })
+    const token = makeRandomToken(takenTokens)
+    takenTokens.add(token)
+    voters.push({ id: autoId, name, className, hasVoted: false, token })
   }
 
   // Semua baris duplikat tetap dianggap berhasil dibaca (voters kosong), agar
@@ -261,6 +276,7 @@ export function importVotersFromWorkbook(
         className: columns.className?.header,
       },
       generatedIds,
+      tokensGenerated: voters.length,
       skippedRows,
       duplicateIds,
     },

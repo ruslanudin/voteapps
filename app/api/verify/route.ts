@@ -7,10 +7,12 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
     const studentId = String(body?.studentId ?? '').trim()
-    if (!studentId) {
-      return NextResponse.json({ ok: false, reason: 'empty' }, { status: 400 })
+    // Token dari surat undangan wajib dikirim bersama NISN/NIS.
+    const token = String(body?.token ?? '').trim()
+    if (!studentId || !token) {
+      return NextResponse.json({ ok: false, reason: 'invalid' }, { status: 400 })
     }
-    const result = await verifyVoter(studentId)
+    const result = await verifyVoter(studentId, token)
     return NextResponse.json(result)
   } catch (error) {
     console.error('POST /api/verify', error)

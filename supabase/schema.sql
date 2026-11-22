@@ -39,6 +39,8 @@ create table if not exists public.voters (
   name text not null default '',
   class_name text not null default '',
   has_voted boolean not null default false,
+  -- Token undangan 6 karakter yang dicetak pada surat undangan pemilihan.
+  token text not null default '',
   updated_at timestamptz not null default now()
 );
 
@@ -72,6 +74,16 @@ alter table public.settings
   add column if not exists report_principal_nip text not null default '',
   add column if not exists report_include_classes boolean not null default false;
 
+-- 5) Token undangan pemilihan (6 karakter). Ditambahkan terpisah agar aman
+--    dijalankan pada database yang sudah ada. Detail backfill token lama ada
+--    di supabase/voter-tokens.sql.
+alter table public.voters
+  add column if not exists token text not null default '';
+
+create unique index if not exists voters_token_unique
+  on public.voters (token)
+  where token <> '';
+
 -- =====================================================================
 -- Seed data awal
 -- =====================================================================
@@ -86,10 +98,10 @@ values
   ('03', 'Keisha Anindya', 'Bima Arya Wijaya', 'blue', 'KA', 'Aktif di teater sekolah dan komunitas literasi; terbiasa membangun kolaborasi lintas kelas.', 'Bersama menciptakan lingkungan sekolah yang kreatif dan berprestasi.', 'Festival kreativitas · Teman belajar · Panggung ekspresi', 3)
 on conflict (number) do nothing;
 
-insert into public.voters (id, name, class_name, has_voted)
+insert into public.voters (id, name, class_name, has_voted, token)
 values
-  ('0012345678', 'Siswa Contoh 1', 'XI IPA 1', false),
-  ('0087654321', 'Siswa Contoh 2', 'XI IPS 2', false)
+  ('0012345678', 'Siswa Contoh 1', 'XI IPA 1', false, 'A7K2QX'),
+  ('0087654321', 'Siswa Contoh 2', 'XI IPS 2', false, 'B4M9RT')
 on conflict (id) do nothing;
 
 -- =====================================================================

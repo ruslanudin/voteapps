@@ -9,6 +9,8 @@ import {
   defaultElectionSettings,
   defaultReportSettings,
   isVotingOpen,
+  makeRandomToken,
+  normalizeToken,
 } from '@/lib/election'
 
 type SettingsRow = {
@@ -52,6 +54,9 @@ type VoterRow = {
   name: string
   class_name: string
   has_voted: boolean
+  // Opsional agar dashboard tetap bisa membaca database yang belum
+  // menjalankan supabase/voter-tokens.sql.
+  token?: string | null
 }
 
 function mapSettings(row: SettingsRow | null): ElectionSettings {
@@ -104,6 +109,7 @@ function mapVoter(row: VoterRow): Voter {
     name: row.name,
     className: row.class_name,
     hasVoted: row.has_voted,
+    token: row.token ?? '',
   }
 }
 
@@ -174,6 +180,7 @@ type VoterRowInput = {
   id: string
   name: string
   class_name: string
+  token: string
 }
 
 const DELETE_CHUNK_SIZE = 100
@@ -213,7 +220,8 @@ function normalizeCandidates(candidates: Candidate[] | undefined): CandidateRowI
 
 function normalizeVoters(voters: Voter[] | undefined): VoterRowInput[] {
   const ids = new Set<string>()
-  return (voters ?? []).map((voter, index) => {
+  const tokens = new Set<string>()
+  const rows = (voters ?? []).map((voter, index) => {
     const id = String(voter?.id ?? '').trim()
     if (!id) {
       throw new ElectionValidationError(
@@ -225,8 +233,27 @@ function normalizeVoters(voters: Voter[] | undefined): VoterRowInput[] {
     }
     ids.add(id)
 
-    return { id, name: voter.name ?? '', class_name: voter.className ?? '' }
+    // Token undangan wajib unik. Baris tanpa token diisi otomatis di bawah,
+    // supaya tidak ada pemilih yang kehilangan undangannya.
+    const token = normalizeToken(voter.token)
+    if (token) {
+      if (tokens.has(token)) {
+        throw new ElectionValidationError(`Token ${token} dipakai lebih dari satu pemilih.`)
+      }
+      tokens.add(token)
+    }
+
+    return { id, name: voter.name ?? '', class_name: voter.className ?? '', token }
   })
+
+  for (const row of rows) {
+    if (row.token) continue
+    const token = makeRandomToken(tokens)
+    tokens.add(token)
+    row.token = token
+  }
+
+  return rows
 }
 
 async function deleteMissingRows(
@@ -291,6 +318,11 @@ export async function saveFullElection(data: ElectionData): Promise<void> {
   // memilih tidak ikut ter-reset oleh data dashboard yang usang.
   const { error: voterUpsertError } = await db.from('voters').upsert(voters, { onConflict: 'id' })
   if (voterUpsertError) {
+    if (/token/i.test(voterUpsertError.message) && /does not exist/i.test(voterUpsertError.message)) {
+      throw new Error(
+        'Kolom token belum ada di database. Jalankan supabase/voter-tokens.sql di Supabase SQL Editor, lalu simpan ulang.',
+      )
+    }
     throw new Error(`Gagal menyimpan daftar pemilih: ${voterUpsertError.message}`)
   }
 
@@ -336,18 +368,26 @@ async function getVotingGate(): Promise<{ open: boolean; status: ElectionSetting
 
 export async function verifyVoter(
   studentId: string,
+  token: string,
 ): Promise<{ ok: boolean; name?: string; reason?: string; status?: ElectionSettings['status'] }> {
   const gate = await getVotingGate()
   if (!gate.open) return { ok: false, reason: 'not_open', status: gate.status }
 
   const db = getSupabaseAdmin()
-  const { data } = await db
+  const { data, error } = await db
     .from('voters')
-    .select('name, has_voted')
+    .select('name, has_voted, token')
     .eq('id', studentId)
-    .maybeSingle<{ name: string; has_voted: boolean }>()
+    .maybeSingle<{ name: string; has_voted: boolean; token: string | null }>()
+
+  if (error) throw new Error(`Gagal membaca data pemilih: ${error.message}`)
 
   if (!data) return { ok: false, reason: 'not_found', status: gate.status }
+  // Token diperiksa sebelum status "sudah memilih" agar status pemilih tidak
+  // bisa ditebak tanpa token undangan yang benar.
+  if (normalizeToken(data.token) !== normalizeToken(token)) {
+    return { ok: false, reason: 'invalid_token', status: gate.status }
+  }
   if (data.has_voted) return { ok: false, reason: 'already_voted', status: gate.status }
   return { ok: true, name: data.name, status: gate.status }
 }
@@ -371,11 +411,25 @@ export async function getVoterStatus(
 export async function castVote(
   studentId: string,
   candidateNumber: string,
+  token: string,
 ): Promise<{ ok: boolean; reason?: string; status?: ElectionSettings['status'] }> {
   const gate = await getVotingGate()
   if (!gate.open) return { ok: false, reason: 'not_open', status: gate.status }
 
   const db = getSupabaseAdmin()
+
+  // Token undangan wajib cocok sebelum suara dicatat, sehingga permintaan
+  // langsung ke API tanpa token dari surat undangan tetap ditolak.
+  const { data: voter, error: voterError } = await db
+    .from('voters')
+    .select('token')
+    .eq('id', studentId)
+    .maybeSingle<{ token: string | null }>()
+  if (voterError) throw new Error(`Gagal membaca data pemilih: ${voterError.message}`)
+  if (!voter) return { ok: false, reason: 'not_found' }
+  if (normalizeToken(voter.token) !== normalizeToken(token)) {
+    return { ok: false, reason: 'invalid_token' }
+  }
 
   const { error } = await db.rpc('cast_vote', {
     p_voter_id: studentId,
